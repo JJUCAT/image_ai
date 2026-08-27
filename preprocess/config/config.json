@@ -1,0 +1,21 @@
+{
+  "raw": "/home/bg11738/ws/label_studio_database/seg_ws/raw/",
+  "clean": "/home/bg11738/ws/label_studio_database/seg_ws/clean/",
+  "gray": "/home/bg11738/ws/label_studio_database/seg_ws/gray/",
+  "clean_config": {
+    "batch_szie": 1000,
+    "time_min_interval": 1,
+    "perceptual_hash": {
+      "scaled_size": 32,
+      "DCT_szie": 32,
+      "hash_size": 8,
+      "hamming_distance": 6
+    }
+  },
+  "raw_masks": "/home/bg11738/ws/label_studio_database/seg_ws/raw_masks/",
+  "gray_masks": "/home/bg11738/ws/label_studio_database/seg_ws/gray_masks/",
+  "grass_mapping": {
+    "1": 1,
+    "7": 1
+  }
+}

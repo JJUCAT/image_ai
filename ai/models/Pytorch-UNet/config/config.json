@@ -1,0 +1,20 @@
+{
+  "imgs": "/home/bg11738/ws/label_studio_database/seg_ws/gray/",
+  "masks": "/home/bg11738/ws/label_studio_database/seg_ws/gray_masks/",
+  "checkpoints": "/home/bg11738/ws/label_studio_database/seg_ws/checkpoints/",
+  "n_channels": 1,
+  "train": {
+    "epochs": 5,
+    "batch_size": 4,
+    "learning_rate": 1e-3,
+    "val_percent": 0.1,
+    "save_checkpoint": true,
+    "img_scale": 1.0,
+    "amp": false,
+    "weight_decay": 1e-8,
+    "momentum": 0.9,
+    "gradient_clipping": 1.0
+  },
+  "test_output": "/home/bg11738/ws/label_studio_database/seg_ws/test_output/",
+  "mask_transparent": 0.5
+}
