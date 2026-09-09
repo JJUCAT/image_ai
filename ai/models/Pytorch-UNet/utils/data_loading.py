@@ -10,6 +10,15 @@ from tqdm import tqdm
 
 
 def load_image(filename):
+    """数据集加载，得到 PIL.Image 对象
+
+    Args:
+        filename (_type_): _description_
+
+    Returns:
+        PIL.Image: 高质量缩放，多种重采样算法
+                   ！缩放支持 NEAREST 相邻取整，这样掩码图（分割标签图）的缩放不会改变像素的标签值！
+    """    
     ext = splitext(filename)[1]
     if ext == '.npy':
         return Image.fromarray(np.load(filename))
@@ -20,18 +29,42 @@ def load_image(filename):
 
 
 def unique_mask_values(idx, mask_dir, mask_suffix):
+    """获取掩码图像的唯一标签值数组
+
+    Args:
+        idx (_type_): _description_
+        mask_dir (_type_): _description_
+        mask_suffix (_type_): _description_
+
+    Raises:
+        ValueError: _description_
+
+    Returns:
+        _type_: _description_
+    """    
+    # 找到图像对应的掩码文件
     mask_file = list(mask_dir.glob(idx + mask_suffix + '.*'))[0]
+    # 掩码图像转为 numpy 数组
     mask = np.asarray(load_image(mask_file))
+    #二维数组，灰度标签图，数组值就是掩码像素的分割标签
     if mask.ndim == 2:
+        # np.unique 返回不重复的元素并排序
         return np.unique(mask)
+    #三维数组，彩色标签图，数组值(R,G,B)就是掩码像素的分割标签
     elif mask.ndim == 3:
         mask = mask.reshape(-1, mask.shape[-1])
+        # axis=0 一行当一个元素
         return np.unique(mask, axis=0)
     else:
         raise ValueError(f'Loaded masks should have 2 or 3 dimensions, found {mask.ndim}')
 
 
 class BasicDataset(Dataset):
+    """把磁盘上的"图像 + 掩码"配对，逐样本加载、预处理，最后输出模型可直接用的 image/mask tensor
+
+    Args:
+        Dataset (_type_): _description_
+    """    
     def __init__(self, images_dir: str, mask_dir: str, scale: float = 1.0, mask_suffix: str = ''):
         self.images_dir = Path(images_dir)
         self.mask_dir = Path(mask_dir)
@@ -65,6 +98,7 @@ class BasicDataset(Dataset):
         w, h = pil_img.size
         newW, newH = int(scale * w), int(scale * h)
         assert newW > 0 and newH > 0, 'Scale is too small, resized images would have no pixel'
+        # NEAREST 避免掩码图像缩放，像素插值
         pil_img = pil_img.resize((newW, newH), resample=Image.NEAREST if is_mask else Image.BICUBIC)
         img = np.asarray(pil_img)
 
@@ -79,11 +113,13 @@ class BasicDataset(Dataset):
             return mask
 
         else:
+            # pytorch 的图像维度排列顺序是 (C, H, W)，通道数在前面，后面是高宽
             if img.ndim == 2:
                 img = img[np.newaxis, ...]
             else:
                 img = img.transpose((2, 0, 1))
 
+            # 归一化到 [0, 1]
             if (img > 1).any():
                 img = img / 255.0
 
