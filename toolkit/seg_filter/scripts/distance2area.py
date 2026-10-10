@@ -3,12 +3,22 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from pathlib import Path
+import struct
 
 # 路径基于脚本自身位置解析，避免从任意工作目录运行时找不到 ../table
 _script_dir = Path(__file__).resolve().parent
 project_distance_table_csv = (_script_dir / "../table/project_distance_table.csv").resolve()
 project_area_table_csv = (_script_dir / "../table/project_area_table.csv").resolve()
+project_area_table_bin = (_script_dir / "../table/project_area_table.bin").resolve()
 project_area_hot_table = (_script_dir / "../table/project_area_hot_table.png").resolve()
+
+# 投影面积表 bin 格式协议（见 README.md）：
+# 头部 16 字节 = 魔数 'JORP' + 版本 + 宽度 + 高度（uint32 小端），
+# 载荷 = float32 小端、行主序（height 行 × width 列），无效像素存 IEEE 754 +inf。
+# 版本号标识载荷格式；dtype/布局变更必须升版本，读写两端共用以下常量。
+_AREA_BIN_MAGIC = b"JORP"
+_AREA_BIN_VERSION = 3
+_AREA_BIN_DTYPE = "<f4"
 
 
 def _parse_point(cell):
@@ -155,6 +165,39 @@ def save_area_table(area_table, csv_path):
             f.write(",".join(f"[{v}]" for v in row) + "\n")
 
 
+def save_area_table_bin(area_table, bin_path):
+    """将投影面积表保存为二进制 bin 文件（见 README.md 的格式协议）。
+
+    头部 16 字节：魔数 'JORP' + 版本 + 宽度 + 高度（uint32 小端）；
+    载荷：float32 小端、行主序，无效像素（inf）存 IEEE 754 +inf。
+    area_table 为 shape=(rows, cols) 的 float 数组。
+    """
+    rows, cols = area_table.shape
+    header = struct.pack("<4sIII", _AREA_BIN_MAGIC, _AREA_BIN_VERSION, cols, rows)
+    payload = np.ascontiguousarray(area_table, dtype=_AREA_BIN_DTYPE)
+    with open(bin_path, "wb") as f:
+        f.write(header)
+        f.write(payload.tobytes(order="C"))
+
+
+def load_area_table_bin(bin_path):
+    """读取投影面积表 bin 并校验头部（魔数/版本/宽高）。
+
+    返回 shape=(height, width) 的 float32 数组，无效像素为 +inf。
+    """
+    with open(bin_path, "rb") as f:
+        header = f.read(16)
+    magic, version, cols, rows = struct.unpack("<4sIII", header)
+    if magic != _AREA_BIN_MAGIC:
+        raise ValueError(f"bin 魔数错误: {magic!r} != {_AREA_BIN_MAGIC!r}")
+    if version != _AREA_BIN_VERSION:
+        raise ValueError(f"bin 版本不支持: {version} != {_AREA_BIN_VERSION}")
+    data = np.fromfile(bin_path, dtype=_AREA_BIN_DTYPE, offset=16)
+    if data.size != rows * cols:
+        raise ValueError(f"bin 数据长度不符: {data.size} != {rows * cols} ({rows}x{cols})")
+    return data.reshape(rows, cols)
+
+
 def save_area_hot_map(area_table, png_path):
     """根据投影面积表生成 plasma 热力图并保存为 PNG。
 
@@ -181,8 +224,10 @@ if __name__ == "__main__":
     dist = load_distance_table(project_distance_table_csv)
     area = compute_projected_area(dist)
     save_area_table(area, project_area_table_csv)
+    save_area_table_bin(area, project_area_table_bin)
     save_area_hot_map(area, project_area_hot_table)
     print(f"投影距离表: {project_distance_table_csv}")
     print(f"投影面积表: {project_area_table_csv}")
+    print(f"投影面积表(bin): {project_area_table_bin}")
     print(f"投影面积热力图: {project_area_hot_table}")
     print(f"有效像素: {int(np.isfinite(area).sum())}, 无效像素: {int(np.isinf(area).sum())}")
