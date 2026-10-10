@@ -23,6 +23,8 @@ def predict_img(net,
     img = img.to(device=device, dtype=torch.float32)
 
     with torch.no_grad():
+        # net(img) 在设备(GPU/NPU/CPU)前向传播得到 (1,C,H,W)的 logits 张量
+        # .cpu() 将张量从GPU/NPU/CPU 移动到 CPU 存为 numpy
         output = net(img).cpu()
         output = F.interpolate(output, (full_img.size[1], full_img.size[0]), mode='bilinear')
         if net.n_classes > 1:
@@ -31,6 +33,29 @@ def predict_img(net,
             mask = torch.sigmoid(output) > out_threshold
 
     return mask[0].long().squeeze().numpy()
+
+
+def predict_denoised_img(net,
+                         full_img,
+                         device,
+                         scale_factor=1,
+                         out_threshold=0.5):
+    net.eval()
+    img = torch.from_numpy(BasicDataset.preprocess(None, full_img, scale_factor, is_mask=False))
+    img = img.unsqueeze(0)
+    img = img.to(device=device, dtype=torch.float32)
+
+    with torch.no_grad():
+        output = net(img)
+        output = F.interpolate(output, (full_img.size[1], full_img.size[0]), mode='bilinear')
+        if net.n_classes > 1:
+            mask = output.argmax(dim=1)
+        else:
+            mask = torch.sigmoid(output) > out_threshold
+
+    # 与 predict_img 的区别：所有张量计算（插值、argmax/sigmoid）都在 device 上完成，
+    # 仅在 return 时才把标签张量搬到 CPU 并转 numpy
+    return mask[0].long().squeeze().cpu().numpy()
 
 
 def get_args():
