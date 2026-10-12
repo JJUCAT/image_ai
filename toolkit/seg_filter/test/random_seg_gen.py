@@ -256,6 +256,54 @@ def save_labels_png(labels, classes_color, png_path):
     save_seg_png(render_color(labels, classes_color), png_path)
 
 
+def load_labels_npy(npy_path):
+    """读取生成的随机分割矩阵 .npy，返回 (H, W) int 数组（类别下标）。"""
+    return np.load(npy_path)
+
+
+# ---------------------------------------------------------------------------
+# 张量输出接口
+# ---------------------------------------------------------------------------
+
+def labels_to_label_tensor(labels, batch=True, device="cpu"):
+    """分割矩阵 -> 标签张量 (H, W) int64；batch=True 时 (1, H, W)。
+
+    像素值为类别下标，用于 CrossEntropyLoss 目标（标签张量模型.drawio）。
+    """
+    import torch
+    t = torch.from_numpy(labels).long()
+    if batch:
+        t = t.unsqueeze(0)
+    return t.to(device)
+
+
+def labels_to_output_tensor(labels, n_classes, batch=True, device="cpu"):
+    """分割矩阵 -> 分割输出张量 (C, H, W) float32；batch=True 时 (1, C, H, W)。
+
+    每类一个通道，真值类通道为 1、其他通道为 0（分割输出张量模型.drawio），
+    与 UNet 输出 (B, C, H, W) 的布局一致。
+    """
+    import torch
+    t = torch.nn.functional.one_hot(torch.from_numpy(labels).long(), n_classes)
+    t = t.permute(2, 0, 1).float()                 # (C, H, W)
+    if batch:
+        t = t.unsqueeze(0)
+    return t.to(device)
+
+
+def npy_to_label_tensor(npy_path, batch=True, device="cpu"):
+    """读取 .npy 分割矩阵并输出标签张量（load_labels_npy + labels_to_label_tensor）。"""
+    return labels_to_label_tensor(load_labels_npy(npy_path),
+                                  batch=batch, device=device)
+
+
+def npy_to_output_tensor(npy_path, n_classes, batch=True, device="cpu"):
+    """读取 .npy 分割矩阵并输出分割输出张量
+    （load_labels_npy + labels_to_output_tensor）。"""
+    return labels_to_output_tensor(load_labels_npy(npy_path), n_classes,
+                                   batch=batch, device=device)
+
+
 # ---------------------------------------------------------------------------
 # 完整链路
 # ---------------------------------------------------------------------------

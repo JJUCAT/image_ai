@@ -1,0 +1,14 @@
+{
+  "table": "../table/project_area_table.bin",
+
+  "devices": "cpu",
+
+  "search_area": 0.003,
+
+  "max_kernel_size": 11,
+
+  "noise_area": 0.001,
+
+  "denoise_rows": 150
+
+}

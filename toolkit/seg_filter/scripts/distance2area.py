@@ -13,12 +13,30 @@ project_area_table_bin = (_script_dir / "../table/project_area_table.bin").resol
 project_area_hot_table = (_script_dir / "../table/project_area_hot_table.png").resolve()
 
 # 投影面积表 bin 格式协议（见 README.md）：
-# 头部 16 字节 = 魔数 'JORP' + 版本 + 宽度 + 高度（uint32 小端），
-# 载荷 = float32 小端、行主序（height 行 × width 列），无效像素存 IEEE 754 +inf。
+# 头部 = 魔数 'JORP' + 版本 + 宽度 + 高度（uint32 小端，16 字节），
+# 随后是 row_ave_area（height 个 float32 小端，每行平均投影面积，
+#   行内含无效像素时该值为 +inf），
+# 载荷 = 投影面积表 float32 小端、行主序（height 行 × width 列），
+#   无效像素存 IEEE 754 +inf。
 # 版本号标识载荷格式；dtype/布局变更必须升版本，读写两端共用以下常量。
 _AREA_BIN_MAGIC = b"JORP"
-_AREA_BIN_VERSION = 3
+_AREA_BIN_VERSION = 4
 _AREA_BIN_DTYPE = "<f4"
+
+
+def compute_row_ave_area(area_table):
+    """计算每行平均投影面积，返回长度=行数(高)的 float32 数组。
+
+    行内包含无效像素（+inf）时，该行均值直接写 inf；全部有效时才
+    计算有效像素的平均值。
+    """
+    rows = area_table.shape[0]
+    row_ave = np.full(rows, np.inf, dtype=np.float32)
+    for r in range(rows):
+        vals = area_table[r]
+        if np.isfinite(vals).all():
+            row_ave[r] = vals.mean()
+    return row_ave
 
 
 def _parse_point(cell):
@@ -169,21 +187,28 @@ def save_area_table_bin(area_table, bin_path):
     """将投影面积表保存为二进制 bin 文件（见 README.md 的格式协议）。
 
     头部 16 字节：魔数 'JORP' + 版本 + 宽度 + 高度（uint32 小端）；
+    随后 row_ave_area：height 个 float32 小端，每行平均投影面积
+      （行内含无效像素时该值为 +inf，见 compute_row_ave_area）；
     载荷：float32 小端、行主序，无效像素（inf）存 IEEE 754 +inf。
     area_table 为 shape=(rows, cols) 的 float 数组。
     """
     rows, cols = area_table.shape
     header = struct.pack("<4sIII", _AREA_BIN_MAGIC, _AREA_BIN_VERSION, cols, rows)
+    row_ave = compute_row_ave_area(area_table).astype(_AREA_BIN_DTYPE)
     payload = np.ascontiguousarray(area_table, dtype=_AREA_BIN_DTYPE)
     with open(bin_path, "wb") as f:
         f.write(header)
+        f.write(row_ave.tobytes(order="C"))
         f.write(payload.tobytes(order="C"))
 
 
-def load_area_table_bin(bin_path):
+def load_area_table_bin(bin_path, return_row_ave=False):
     """读取投影面积表 bin 并校验头部（魔数/版本/宽高）。
 
     返回 shape=(height, width) 的 float32 数组，无效像素为 +inf。
+    return_row_ave=True 时返回 (area, row_ave_area)，其中 row_ave_area
+    为 length=height 的 float32 数组（每行平均投影面积，行含无效像素
+    时为 +inf）。
     """
     with open(bin_path, "rb") as f:
         header = f.read(16)
@@ -192,10 +217,16 @@ def load_area_table_bin(bin_path):
         raise ValueError(f"bin 魔数错误: {magic!r} != {_AREA_BIN_MAGIC!r}")
     if version != _AREA_BIN_VERSION:
         raise ValueError(f"bin 版本不支持: {version} != {_AREA_BIN_VERSION}")
-    data = np.fromfile(bin_path, dtype=_AREA_BIN_DTYPE, offset=16)
+    row_ave = np.fromfile(bin_path, dtype=_AREA_BIN_DTYPE, offset=16, count=rows)
+    if row_ave.size != rows:
+        raise ValueError(f"bin 行平均面积长度不符: {row_ave.size} != {rows}")
+    data = np.fromfile(bin_path, dtype=_AREA_BIN_DTYPE, offset=16 + rows * 4)
     if data.size != rows * cols:
         raise ValueError(f"bin 数据长度不符: {data.size} != {rows * cols} ({rows}x{cols})")
-    return data.reshape(rows, cols)
+    area = data.reshape(rows, cols)
+    if return_row_ave:
+        return area, row_ave
+    return area
 
 
 def save_area_hot_map(area_table, png_path):
