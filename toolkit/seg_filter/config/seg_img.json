@@ -1,0 +1,21 @@
+{
+  "table": "../table/project_area_table.bin",
+
+  "classes": [
+    "background",
+    "grass",
+    "person",
+    "bare",
+    "leaves",
+    "road"
+  ],
+
+  "classes_color": [
+    "#000000",
+    "#00FF00",
+    "#FF0000",
+    "#C2B280",
+    "#FFFF00",
+    "#808080"
+  ]
+}
